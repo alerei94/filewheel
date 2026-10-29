@@ -11,7 +11,7 @@ Drop the file on the format you need, and it's converted.
 | Platform | Folder | Status |
 |---|---|---|
 | macOS 13 or later | [`mac/`](mac/) | Available |
-| Windows | `windows/` | Planned |
+| Windows 10 / 11 | [`windows/`](windows/) | Beta |
 
 ---
 
@@ -23,7 +23,17 @@ filewheel/
 │   ├── FileWheel.swift     the whole app, in a single file
 │   ├── build.sh            compiles it and creates FileWheel.app
 │   └── AppIcon.png         app icon (1024×1024)
-├── windows/                (planned)
+├── windows/
+│   ├── FileWheel.csproj    project file
+│   ├── build.ps1           builds dist\FileWheel.exe
+│   ├── app.manifest        per-monitor DPI awareness
+│   ├── app.ico             app and tray icon
+│   ├── Program.cs          entry point, tray icon, menu
+│   ├── WheelForm.cs        the wheel (drawing, drag and drop, conversion flow)
+│   ├── Native.cs           Win32 calls and the mouse hook
+│   ├── Formats.cs          file types, available formats, optional tools, settings
+│   ├── Converter.cs        conversion engine (images, PDF writer, ffmpeg, Word, LibreOffice)
+│   └── WinRt.cs            Windows Runtime parts (HEIC/WebP, transcoding, PDF pages)
 ├── LICENSE
 └── README.md
 ```
@@ -216,21 +226,169 @@ Choose **Quit** from the app's menu, then delete `FileWheel.app`
 
 ## Windows
 
-Planned. It will live in the `windows/` folder, with the same idea: hold Shift while dragging a file and pick the
-format from a wheel.
+The Windows version works like the Mac one: hold Shift while dragging a file, drop it on a format of the wheel.
+It lives in the system tray (the icon is next to the clock; it may be inside the **^** overflow menu).
+
+> **Beta.** The code is new and has been type-checked and partly tested, but not yet used on many real PCs.
+> If something doesn't work, the troubleshooting section below covers the likely causes.
+
+### Requirements
+
+- Windows 10 (version 1809 or later) or Windows 11
+- To **build**: the .NET 8 SDK
+
+  ```powershell
+  winget install Microsoft.DotNet.SDK.8
+  ```
+
+- To **run**: the .NET 8 Desktop Runtime (`winget install Microsoft.DotNet.DesktopRuntime.8`),
+  unless you build a self-contained version (see below)
+
+### Build and run
+
+In PowerShell:
+
+```powershell
+git clone https://github.com/YOUR-USER/filewheel.git
+cd filewheel\windows
+.\build.ps1
+.\dist\FileWheel.exe
+```
+
+If PowerShell refuses to run the script, allow it for this session first:
+`Set-ExecutionPolicy -Scope Process Bypass`.
+
+Build options:
+
+| Command | Result |
+|---|---|
+| `.\build.ps1` | Small `.exe`; needs the .NET 8 Desktop Runtime installed |
+| `.\build.ps1 -SelfContained` | About 70 MB, runs on any Windows 10/11 PC with nothing installed |
+| `.\build.ps1 -Arch arm64` | Build for ARM PCs (default is `x64`) |
+
+The result is a single file, `windows\dist\FileWheel.exe`. Copy it wherever you like, for example to
+`C:\Program Files\FileWheel`, and create a shortcut. To start it with Windows, use **Launch at login** in the
+tray menu.
+
+### How to use it
+
+**By dragging (the main way)**
+
+1. Select a file in File Explorer or on the Desktop.
+2. Start dragging it **while holding Shift**.
+3. The wheel opens next to the cursor, with your file in the center and the possible formats around it.
+4. Drop the file on the format you want. The center shows progress, then a checkmark.
+5. The result is saved **next to the original file** (or in the folder you chose). Click the center when it's
+   done to show it in File Explorer.
+
+The star marks the recommended format, always at the top. You can drag several files at once; if they are of
+different types, each format shows how many files it can convert. Nothing is ever overwritten: an existing name
+becomes `name 2.ext`.
+
+**From the tray menu** (right-click the icon; double-click opens the file picker)
+
+- **Convert files…**: pick files and click a format on the wheel.
+- **Save next to the original file** / **Choose a destination folder…**
+- **Launch at login**
+- **Quit**
+
+### Supported formats
+
+| Type | Input | Output |
+|---|---|---|
+| **Images** | PNG, JPG, BMP, GIF, TIFF, ICO, and HEIC, HEIF, WebP (see below) | PNG, JPG, BMP, GIF, TIFF, PDF (+ WebP with ffmpeg) |
+| **Audio** | MP3, M4A, WAV, AIFF, FLAC, AAC, WMA, OGG, Opus (what Windows or ffmpeg can read) | MP3, M4A, WAV, FLAC, WMA (+ OGG, Opus, AIFF with ffmpeg) |
+| **Video** | MP4, MOV, M4V, AVI, MKV, WebM, MPG, 3GP, FLV, WMV (depends on the installed codecs) | MP4, WMV (+ MP3, M4A, MOV, MKV, WebM, AVI, GIF with ffmpeg) |
+| **Documents** | TXT, MD, RTF, HTML, DOC, DOCX, ODT | PDF, DOCX, DOC, ODT, RTF, HTML, TXT (needs Word or LibreOffice) |
+| **PDF** | PDF | PNG, JPG (one image per page) |
+
+Notes:
+
+- Photos keep their orientation (the camera's rotation is applied). Transparency becomes white in JPG and BMP.
+- **HEIC / HEIF / WebP** images are read through Windows' own codecs: install *HEIF Image Extensions* and
+  *WebP Image Extensions* from the Microsoft Store if Windows doesn't have them yet.
+- Image → PDF creates a one-page PDF containing the picture.
+- A multi-page PDF becomes `name_page1`, `name_page2`, …
+- PDF → TXT is not available on Windows.
+- Documents are converted with **Microsoft Word** if it is installed, otherwise with **LibreOffice**. Without
+  either, document formats simply don't appear on the wheel and a message explains why.
+- Without ffmpeg, audio and video are converted with the codecs built into Windows (Media Foundation), which
+  cover the formats listed without "+ ffmpeg".
+
+The recommended format works as on the Mac (images to JPG, audio to MP3, video to MP4, documents to PDF, PDF to
+PNG) and the app remembers the last format you chose for each type.
+
+### ffmpeg (optional)
+
+```powershell
+winget install Gyan.FFmpeg
+```
+
+Restart FileWheel afterwards. It is detected automatically (PATH, WinGet, Chocolatey, Scoop). ffmpeg runs at low
+priority and uses half of the CPU cores.
+
+### Changing the icon
+
+Replace `windows\app.ico` with your own multi-size `.ico` file (16 to 256 pixels) and run `.\build.ps1` again.
+
+### Troubleshooting
+
+**The wheel doesn't appear.**
+- Hold Shift *while* dragging (before or after the drag starts both work). Drag **files**, not text or images
+  from a web page.
+- Make sure the app is running: look for the icon in the system tray, including the **^** overflow menu.
+- Programs running **as administrator** (including an elevated File Explorer) can't be watched by a normal
+  program, and can't drop files onto it. Run FileWheel as administrator too, or drag from a normal window.
+- Some security software warns about programs that watch the mouse system-wide. FileWheel only looks at
+  button presses and movement, only reads files while Shift is held, and never sends anything anywhere.
+- In the meantime, **Convert files…** from the tray menu works without drag detection.
+
+**Windows SmartScreen says "Windows protected your PC".**
+The `.exe` is not signed. Click **More info → Run anyway**. Signing requires a code-signing certificate.
+
+**A format is missing from the wheel, or a conversion fails.**
+The message under the wheel says why. Usually you need ffmpeg (audio/video), Word or LibreOffice (documents),
+or the HEIF/WebP extensions (images).
+
+**`build.ps1` shows errors.**
+- *.NET SDK not found*: install it with `winget install Microsoft.DotNet.SDK.8`, then open a new PowerShell window.
+- Other errors: copy the complete message so it can be analyzed.
+
+### Settings and uninstalling
+
+Settings (destination folder, remembered formats) are stored in `%APPDATA%\FileWheel\settings.ini`.
+To uninstall: choose **Quit** from the tray menu, turn off **Launch at login**, delete `FileWheel.exe`
+and, if you like, the `%APPDATA%\FileWheel` folder.
+
+### Technical notes
+
+- C# on .NET 8 with Windows Forms; no third-party libraries. The wheel is a borderless, layered window drawn
+  with GDI+ (per-pixel transparency), which makes it light and lets it be the drop target of the drag.
+- Windows doesn't let a program ask what is being dragged, so FileWheel installs a low-level mouse hook:
+  Shift + left button held + the mouse moving shows an almost invisible window under the cursor. If the drag
+  carries files, that window receives the OLE drag-and-drop events, reads the file list and reveals the wheel.
+  For drags that don't carry files, it disappears when the button is released.
+- Conversions use what Windows provides: GDI+ (images), Windows Runtime codecs (HEIC, WebP), Media Foundation
+  (audio, video) and the Windows PDF renderer (PDF pages). ffmpeg, Word and LibreOffice are optional.
+- Per-monitor DPI awareness is declared in `app.manifest`.
 
 ---
 
 ## Development
 
-The repository only holds the sources: `FileWheel.app` is regenerated each time with `bash build.sh`
-and ignored by git. The usual flow: edit `mac/FileWheel.swift`, test with
+The repository only holds the sources: build output (`FileWheel.app`, `windows/dist/`, `bin/`, `obj/`) is
+regenerated by the build scripts and ignored by git. The usual flow: edit the source of one platform, build,
+test, and save the change.
 
 ```bash
+# macOS
 cd mac && bash build.sh && open FileWheel.app
 ```
 
-and then save the change with
+```powershell
+# Windows
+cd windows; .\build.ps1; .\dist\FileWheel.exe
+```
 
 ```bash
 git add -A && git commit -m "Describe the change"
