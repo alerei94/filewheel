@@ -23,7 +23,6 @@ appears next to your cursor. Just drop the file on the format you need.
 | `README.md` / `README.en.md` | This documentation (Italian / English) |
 | `LICENSE` | Project license (MIT) |
 | `.gitignore` | What git should ignore (the built app, system files) |
-| `setup-repo.sh` | Turns the folder into a git repository (run once) |
 
 ---
 
@@ -42,7 +41,13 @@ xcode-select --install
 
 ## Installation
 
-1. Put `ConvertiMac.swift`, `build.sh` and `AppIcon.png` in the same folder.
+1. Get the project and enter its folder:
+
+   ```bash
+   git clone https://github.com/YOUR-USER/converti-mac.git && cd converti-mac
+   ```
+
+   (or put `ConvertiMac.swift`, `build.sh` and `AppIcon.png` in the same folder).
 2. In Terminal, from that folder:
 
    ```bash
@@ -230,26 +235,21 @@ Choose **Esci** (Quit) from the app's menu, then delete `Converti.app`
 
 ---
 
-## Development with git
+## Development
 
-The folder is meant to be a git project: the repository only holds the sources, while `Converti.app`
-is regenerated each time with `bash build.sh` and ignored by git.
+The repository only holds the sources: `Converti.app` is regenerated each time with `bash build.sh`
+and ignored by git.
+
+The usual flow: edit `ConvertiMac.swift`, test with
 
 ```bash
-bash setup-repo.sh        # once: .gitignore, LICENSE and first commit
+bash build.sh && open Converti.app
 ```
 
-Then the usual flow: edit `ConvertiMac.swift`, test with `bash build.sh && open Converti.app`, and save with
+and then save the change with
 
 ```bash
 git add -A && git commit -m "Describe the change"
-```
-
-To publish it on GitHub, create an **empty** repository (no README) and run:
-
-```bash
-git remote add origin https://github.com/YOUR-USER/converti.git
-git push -u origin main
 ```
 
 ## License
