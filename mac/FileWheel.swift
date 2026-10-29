@@ -4,7 +4,7 @@ import PDFKit
 import ImageIO
 import UniformTypeIdentifiers
 
-// MARK: - Categorie e formati
+// MARK: - Categories and formats
 
 enum Category {
     case image, audio, video, document, pdf
@@ -41,14 +41,14 @@ enum Category {
 }
 
 enum Tools {
-    /// ffmpeg è opzionale: se presente sblocca molti più formati audio/video.
+    /// ffmpeg is optional: when present, it unlocks many more audio/video formats.
     static let ffmpeg: String? = [
         "/opt/homebrew/bin/ffmpeg",
         "/usr/local/bin/ffmpeg",
         "/usr/bin/ffmpeg"
     ].first { FileManager.default.isExecutableFile(atPath: $0) }
 
-    /// Porta le estensioni equivalenti a una forma unica (jpeg→jpg, tif→tiff, ...).
+    /// Maps equivalent extensions to a single form (jpeg→jpg, tif→tiff, ...).
     static func normalized(_ ext: String) -> String {
         switch ext.lowercased() {
         case "jpeg": return "jpg"
@@ -59,8 +59,8 @@ enum Tools {
         }
     }
 
-    /// Sceglie il formato di destinazione più sensato tra quelli disponibili.
-    /// Se l'utente ha già scelto un formato per quella categoria, lo riusa.
+    /// Picks the most sensible target format among the available ones.
+    /// If the user already chose a format for that category, it is reused.
     static func smartTarget(for category: Category, source: String) -> String {
         let options = targets(for: category)
         var src = source.lowercased()
@@ -83,7 +83,7 @@ enum Tools {
         return options.first(where: { $0 != src }) ?? options[0]
     }
 
-    /// Metà dei core: lascia il Mac reattivo durante le conversioni pesanti.
+    /// Half of the cores: keeps the Mac responsive during heavy conversions.
     static let cpuThreads = max(1, ProcessInfo.processInfo.activeProcessorCount / 2)
 
     static func targets(for category: Category) -> [String] {
@@ -103,11 +103,11 @@ struct ConvError: LocalizedError {
     var errorDescription: String? { message }
 }
 
-// MARK: - Motore di conversione
+// MARK: - Conversion engine
 
 enum Converter {
     static func convert(input: URL, ext: String, category: Category, outputDir: URL) async throws -> URL {
-        // Priorità bassa: il Mac resta fluido mentre converte
+        // Low priority: the Mac stays smooth while converting
         try await Task.detached(priority: .utility) {
             try await Converter.convertInternal(input: input, ext: ext, category: category, outputDir: outputDir)
         }.value
@@ -139,7 +139,7 @@ enum Converter {
         return url
     }
 
-    // MARK: Processi esterni
+    // MARK: External processes
 
     static func runProcess(_ path: String, _ args: [String]) async throws {
         let errURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".err")
@@ -164,24 +164,24 @@ enum Converter {
         if status != 0 {
             let text = (try? String(contentsOf: errURL, encoding: .utf8)) ?? ""
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw ConvError(message: trimmed.isEmpty ? "Conversione non riuscita (codice \(status))" : String(trimmed.suffix(300)))
+            throw ConvError(message: trimmed.isEmpty ? "Conversion failed (code \(status))" : String(trimmed.suffix(300)))
         }
     }
 
-    // MARK: Immagini
+    // MARK: Images
 
     static func image(_ input: URL, _ output: URL, _ ext: String) async throws {
         if ext == "pdf" {
             guard let img = NSImage(contentsOf: input), let page = PDFPage(image: img) else {
-                throw ConvError(message: "Immagine non leggibile")
+                throw ConvError(message: "Unreadable image")
             }
             let doc = PDFDocument()
             doc.insert(page, at: 0)
-            if !doc.write(to: output) { throw ConvError(message: "Impossibile scrivere il PDF") }
+            if !doc.write(to: output) { throw ConvError(message: "Could not write the PDF") }
             return
         }
         if ext == "webp" {
-            guard let ff = Tools.ffmpeg else { throw ConvError(message: "Per WebP serve ffmpeg (brew install ffmpeg)") }
+            guard let ff = Tools.ffmpeg else { throw ConvError(message: "WebP requires ffmpeg (brew install ffmpeg)") }
             try await runProcess(ff, ["-y", "-loglevel", "error", "-i", input.path, output.path])
             return
         }
@@ -190,7 +190,7 @@ enum Converter {
 
     static func imageIO(_ input: URL, _ output: URL, _ ext: String) throws {
         guard let src = CGImageSourceCreateWithURL(input as CFURL, nil) else {
-            throw ConvError(message: "Impossibile leggere l'immagine")
+            throw ConvError(message: "Could not read the image")
         }
         let type: UTType
         switch ext {
@@ -200,10 +200,10 @@ enum Converter {
         case "tiff": type = .tiff
         case "gif":  type = .gif
         case "bmp":  type = .bmp
-        default: throw ConvError(message: "Formato non supportato: \(ext)")
+        default: throw ConvError(message: "Unsupported format: \(ext)")
         }
         guard let dest = CGImageDestinationCreateWithURL(output as CFURL, type.identifier as CFString, 1, nil) else {
-            throw ConvError(message: "Formato di uscita non supportato su questo Mac")
+            throw ConvError(message: "Output format not supported on this Mac")
         }
 
         var options: [CFString: Any] = [:]
@@ -212,14 +212,14 @@ enum Converter {
         let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
         let hasAlpha = (props?[kCGImagePropertyHasAlpha] as? Bool) ?? false
 
-        // JPEG e BMP non supportano la trasparenza: appiattisco su sfondo bianco.
+        // JPEG and BMP don't support transparency: flatten onto a white background.
         if hasAlpha && (ext == "jpg" || ext == "bmp"), let flat = flattenedOnWhite(src, props) {
             CGImageDestinationAddImage(dest, flat, options as CFDictionary)
         } else {
             CGImageDestinationAddImageFromSource(dest, src, 0, options as CFDictionary)
         }
         guard CGImageDestinationFinalize(dest) else {
-            throw ConvError(message: "Scrittura dell'immagine non riuscita")
+            throw ConvError(message: "Could not write the image")
         }
     }
 
@@ -258,7 +258,7 @@ enum Converter {
         case "aiff": format = ["-f", "AIFF", "-d", "BEI16"]
         case "caf":  format = ["-f", "caff", "-d", "LEI16"]
         case "flac": format = ["-f", "flac", "-d", "flac"]
-        default: throw ConvError(message: "Per \(ext.uppercased()) serve ffmpeg (brew install ffmpeg)")
+        default: throw ConvError(message: "\(ext.uppercased()) requires ffmpeg (brew install ffmpeg)")
         }
         try await runProcess("/usr/bin/afconvert", format + [input.path, output.path])
     }
@@ -288,21 +288,21 @@ enum Converter {
         case "mov": preset = AVAssetExportPresetHighestQuality; fileType = .mov
         case "m4v": preset = AVAssetExportPresetHighestQuality; fileType = .m4v
         case "m4a": preset = AVAssetExportPresetAppleM4A; fileType = .m4a
-        default: throw ConvError(message: "Per \(ext.uppercased()) serve ffmpeg (brew install ffmpeg)")
+        default: throw ConvError(message: "\(ext.uppercased()) requires ffmpeg (brew install ffmpeg)")
         }
         let asset = AVURLAsset(url: input)
         guard let session = AVAssetExportSession(asset: asset, presetName: preset) else {
-            throw ConvError(message: "Video di origine non supportato nativamente (installa ffmpeg)")
+            throw ConvError(message: "Source video is not natively supported (install ffmpeg)")
         }
         session.outputURL = output
         session.outputFileType = fileType
         await session.export()
         if session.status != .completed {
-            throw ConvError(message: session.error?.localizedDescription ?? "Esportazione video non riuscita")
+            throw ConvError(message: session.error?.localizedDescription ?? "Video export failed")
         }
     }
 
-    // MARK: Documenti
+    // MARK: Documents
 
     static func document(_ input: URL, _ output: URL, _ ext: String) async throws {
         if ext == "pdf" {
@@ -350,15 +350,15 @@ enum Converter {
         op.showsPrintPanel = false
         op.showsProgressPanel = false
         if !op.run() || !FileManager.default.fileExists(atPath: output.path) {
-            throw ConvError(message: "Creazione del PDF non riuscita")
+            throw ConvError(message: "PDF creation failed")
         }
     }
 
-    // MARK: PDF → testo / immagini
+    // MARK: PDF → text / images
 
     static func pdfConvert(_ input: URL, _ dir: URL, _ base: String, _ ext: String) throws -> URL {
         guard let doc = PDFDocument(url: input) else {
-            throw ConvError(message: "PDF non leggibile (forse protetto da password)")
+            throw ConvError(message: "Unreadable PDF (it may be password-protected)")
         }
         if ext == "txt" {
             let out = uniqueURL(dir: dir, base: base, ext: "txt")
@@ -380,17 +380,17 @@ enum Converter {
                 data = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.9])
             }
             guard let bytes = data else { continue }
-            let name = doc.pageCount > 1 ? "\(base)_pagina\(i + 1)" : base
+            let name = doc.pageCount > 1 ? "\(base)_page\(i + 1)" : base
             let out = uniqueURL(dir: dir, base: name, ext: ext)
             try bytes.write(to: out)
             last = out
         }
-        guard let result = last else { throw ConvError(message: "Nessuna pagina convertita") }
+        guard let result = last else { throw ConvError(message: "No pages were converted") }
         return result
     }
 }
 
-// MARK: - File trascinati e formati disponibili
+// MARK: - Dragged files and available formats
 
 struct DraggedFile {
     let url: URL
@@ -419,7 +419,7 @@ enum Options {
         return Tools.smartTarget(for: first.category, source: first.url.pathExtension)
     }
 
-    /// Formati verso cui almeno un file può essere convertito (il consigliato sta in cima alla ruota).
+    /// Formats that at least one file can be converted to (the recommended one sits at the top of the wheel).
     static func formats(for files: [DraggedFile]) -> [FormatOption] {
         var order: [String] = []
         var counts: [String: Int] = [:]
@@ -439,7 +439,7 @@ enum Options {
     }
 }
 
-// MARK: - La ruota (disegnata a mano: leggerissima)
+// MARK: - The wheel (hand-drawn: extremely light)
 
 enum WheelPhase {
     case choosing
@@ -472,10 +472,10 @@ final class WheelView: NSView {
     }
 
     required init?(coder: NSCoder) {
-        fatalError("init(coder:) non implementato")
+        fatalError("init(coder:) has not been implemented")
     }
 
-    // MARK: Geometria
+    // MARK: Geometry
 
     static func radius(count: Int) -> CGFloat {
         max(92, CGFloat(count) * 54 / (2 * CGFloat.pi))
@@ -514,7 +514,7 @@ final class WheelView: NSView {
         return best
     }
 
-    // MARK: Configurazione e animazione di apertura
+    // MARK: Configuration and opening animation
 
     func configure(options: [FormatOption], files: [DraggedFile], suggested: String?) {
         self.options = options
@@ -523,7 +523,7 @@ final class WheelView: NSView {
         self.hovered = nil
         self.phase = .choosing
         self.iconName = files.count == 1 ? (files.first?.category.icon ?? "doc") : "doc.on.doc.fill"
-        self.title = files.count == 1 ? (files.first?.url.lastPathComponent ?? "") : "\(files.count) file"
+        self.title = files.count == 1 ? (files.first?.url.lastPathComponent ?? "") : "\(files.count) files"
     }
 
     func reset() {
@@ -534,7 +534,7 @@ final class WheelView: NSView {
         options = []
     }
 
-    /// Animazione breve (circa un quarto di secondo): poi il timer si ferma e non consuma più nulla.
+    /// Short animation (about a quarter of a second): then the timer stops and uses nothing.
     func startOpening() {
         animTimer?.invalidate()
         openProgress = 0
@@ -556,7 +556,7 @@ final class WheelView: NSView {
         animTimer = timer
     }
 
-    // MARK: Disegno
+    // MARK: Drawing
 
     private func roundedFont(_ size: CGFloat, _ weight: NSFont.Weight) -> NSFont {
         let base = NSFont.systemFont(ofSize: size, weight: weight)
@@ -590,10 +590,10 @@ final class WheelView: NSView {
     private var caption: String {
         switch phase {
         case .choosing:
-            if let h = hovered, h < options.count { return "Converti in \(options[h].ext.uppercased())" }
+            if let h = hovered, h < options.count { return "Convert to \(options[h].ext.uppercased())" }
             return title
         case .working:
-            return "Conversione in corso…"
+            return "Converting…"
         case .finished(_, let message):
             return message
         }
@@ -604,7 +604,7 @@ final class WheelView: NSView {
         let r = WheelView.radius(count: options.count)
         let p = openProgress
 
-        // Disco di fondo
+        // Background disc
         let discR = (r + WheelView.bubble / 2 + 10) * (0.55 + 0.45 * p)
         let disc = NSBezierPath(ovalIn: NSRect(x: c.x - discR, y: c.y - discR, width: discR * 2, height: discR * 2))
         NSColor.windowBackgroundColor.withAlphaComponent(0.90 * p).setFill()
@@ -613,7 +613,7 @@ final class WheelView: NSView {
         disc.lineWidth = 1
         disc.stroke()
 
-        // Raggi della stella
+        // Star rays
         for i in options.indices {
             let bc = bubbleCenter(i)
             let tip = NSPoint(x: c.x + (bc.x - c.x) * p, y: c.y + (bc.y - c.y) * p)
@@ -625,7 +625,7 @@ final class WheelView: NSView {
             ray.stroke()
         }
 
-        // Bolle dei formati
+        // Format bubbles
         for (i, option) in options.enumerated() {
             let bc = bubbleCenter(i)
             let pos = NSPoint(x: c.x + (bc.x - c.x) * p, y: c.y + (bc.y - c.y) * p)
@@ -659,7 +659,7 @@ final class WheelView: NSView {
             }
         }
 
-        // Centro: il file
+        // Center: the file
         let cr: CGFloat = 34
         let center = NSBezierPath(ovalIn: NSRect(x: c.x - cr, y: c.y - cr, width: cr * 2, height: cr * 2))
         NSColor.controlBackgroundColor.setFill()
@@ -687,7 +687,7 @@ final class WheelView: NSView {
                        color: success ? NSColor.systemGreen : NSColor.systemOrange, center: c, size: 30)
         }
 
-        // Didascalia
+        // Caption
         let pill = NSRect(x: 10, y: 4, width: bounds.width - 20, height: 22)
         NSColor.windowBackgroundColor.withAlphaComponent(0.92).setFill()
         NSBezierPath(roundedRect: pill, xRadius: 11, yRadius: 11).fill()
@@ -695,7 +695,7 @@ final class WheelView: NSView {
                  color: NSColor.secondaryLabelColor)
     }
 
-    // MARK: Rilascio del file sulla ruota
+    // MARK: Dropping the file on the wheel
 
     private func updateHover(_ sender: NSDraggingInfo) -> NSDragOperation {
         let point = convert(sender.draggingLocation, from: nil)
@@ -736,7 +736,7 @@ final class WheelView: NSView {
         return true
     }
 
-    // MARK: Uso con il clic (quando si apre da "Converti file…")
+    // MARK: Click usage (when opened from "Convert files…")
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -780,7 +780,7 @@ final class WheelView: NSView {
     }
 }
 
-// MARK: - App nella barra dei menu
+// MARK: - Menu bar app
 
 @MainActor
 final class AppController: NSObject, NSApplicationDelegate {
@@ -825,7 +825,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         showIntroIfNeeded()
     }
 
-    // MARK: Rilevamento del trascinamento (a livello di sistema)
+    // MARK: Drag detection (system-wide)
 
     private func installMonitors() {
         if let m = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] _ in
@@ -834,7 +834,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             monitors.append(m)
         }
         if let m = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDragged, handler: { [weak self] _ in
-            // Controllo velocissimo: si procede solo se Maiusc è premuto
+            // Very fast check: proceed only if Shift is held
             guard NSEvent.modifierFlags.contains(.shift) else { return }
             Task { @MainActor in self?.handleMouseDragged() }
         }) {
@@ -852,19 +852,19 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func handleMouseDragged() {
         guard !visible, !busy else { return }
         let change = dragPB.changeCount
-        guard change != baseline else { return }   // nessun trascinamento di file in corso
+        guard change != baseline else { return }   // no file drag in progress
 
         let urls = (dragPB.readObjects(forClasses: [NSURL.self],
                                        options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
         let found = Options.files(from: urls)
         if found.isEmpty {
-            baseline = change                       // non sono file convertibili: non ricontrollo
+            baseline = change                       // not convertible files: don't check again
             return
         }
         show(files: found, at: NSEvent.mouseLocation, fixed: false)
     }
 
-    // MARK: Mostrare / nascondere la ruota
+    // MARK: Showing / hiding the wheel
 
     private func show(files: [DraggedFile], at point: NSPoint, fixed: Bool) {
         let options = Options.formats(for: files)
@@ -897,7 +897,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Finché il tasto del mouse è premuto il trascinamento è in corso; quando lo rilasci la ruota sparisce.
+    /// While the mouse button is down the drag is in progress; when you release it the wheel disappears.
     private func pollTick() {
         guard visible, !fixedMode, !busy else { return }
         if NSEvent.pressedMouseButtons & 1 == 0 {
@@ -918,7 +918,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         baseline = dragPB.changeCount
     }
 
-    // MARK: Conversione
+    // MARK: Conversion
 
     private func outputDirectory(for source: URL) -> URL {
         if let path = UserDefaults.standard.string(forKey: "outputDir"),
@@ -951,7 +951,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             var ok = 0
             var fail = 0
             var outputs: [URL] = []
-            var lastError = "Conversione non riuscita"
+            var lastError = "Conversion failed"
 
             for (i, f) in batch.enumerated() {
                 do {
@@ -971,11 +971,11 @@ final class AppController: NSObject, NSApplicationDelegate {
             lastOutputs = outputs
             let message: String
             if fail == 0 {
-                message = ok == 1 ? "Fatto · \(outputs[0].lastPathComponent)" : "Fatto · \(ok) file in \(ext.uppercased())"
+                message = ok == 1 ? "Done · \(outputs[0].lastPathComponent)" : "Done · \(ok) files in \(ext.uppercased())"
             } else if ok == 0 {
                 message = lastError
             } else {
-                message = "\(ok) convertiti, \(fail) con errori"
+                message = "\(ok) converted, \(fail) failed"
             }
             wheel.phase = .finished(success: fail == 0, message: message)
             wheel.needsDisplay = true
@@ -997,13 +997,13 @@ final class AppController: NSObject, NSApplicationDelegate {
         hide()
     }
 
-    // MARK: Icona e menu
+    // MARK: Icon and menu
 
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
             let image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath.circle",
-                                accessibilityDescription: "Converti")
+                                accessibilityDescription: "FileWheel")
             image?.isTemplate = true
             button.image = image
         }
@@ -1014,33 +1014,33 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func rebuildMenu() {
         let menu = NSMenu()
 
-        let hint = NSMenuItem(title: "Tieni premuto ⇧ mentre trascini un file", action: nil, keyEquivalent: "")
+        let hint = NSMenuItem(title: "Hold ⇧ while dragging a file", action: nil, keyEquivalent: "")
         hint.isEnabled = false
         menu.addItem(hint)
         menu.addItem(.separator())
 
-        let pick = NSMenuItem(title: "Converti file…", action: #selector(pickFiles), keyEquivalent: "o")
+        let pick = NSMenuItem(title: "Convert files…", action: #selector(pickFiles), keyEquivalent: "o")
         pick.target = self
         menu.addItem(pick)
         menu.addItem(.separator())
 
         let customPath = UserDefaults.standard.string(forKey: "outputDir")
 
-        let same = NSMenuItem(title: "Salva accanto al file originale", action: #selector(useSourceFolder), keyEquivalent: "")
+        let same = NSMenuItem(title: "Save next to the original file", action: #selector(useSourceFolder), keyEquivalent: "")
         same.target = self
         same.state = customPath == nil ? .on : .off
         menu.addItem(same)
 
         let folderTitle = customPath != nil
-            ? "Salva in: \(URL(fileURLWithPath: customPath ?? "").lastPathComponent)…"
-            : "Scegli una cartella di destinazione…"
+            ? "Save to: \(URL(fileURLWithPath: customPath ?? "").lastPathComponent)…"
+            : "Choose a destination folder…"
         let folder = NSMenuItem(title: folderTitle, action: #selector(chooseFolder), keyEquivalent: "")
         folder.target = self
         folder.state = customPath != nil ? .on : .off
         menu.addItem(folder)
 
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Esci", action: #selector(quitApp), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
 
@@ -1089,15 +1089,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(true, forKey: "didShowIntro")
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "Converti è attivo nella barra dei menu"
-        alert.informativeText = "Tieni premuto Maiusc (⇧) mentre trascini un file: accanto al cursore compare una ruota con i formati disponibili. Rilascia il file su quello che ti serve."
-        alert.addButton(withTitle: "Ho capito")
+        alert.messageText = "FileWheel is running in the menu bar"
+        alert.informativeText = "Hold Shift (⇧) while dragging a file: a wheel with the available formats appears next to your cursor. Drop the file on the one you need."
+        alert.addButton(withTitle: "Got it")
         alert.runModal()
     }
 }
 
 @main
-struct ConvertiApp {
+struct FileWheelApp {
     @MainActor
     static func main() {
         let app = NSApplication.shared
