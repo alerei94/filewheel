@@ -26,8 +26,11 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func makeWindow() {
         let hosting = NSHostingView(rootView: RootView(app: state))
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1080, height: 780),
-                         styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+                         styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         w.title = "Pagewright"
+        w.titleVisibility = .hidden
+        w.titlebarAppearsTransparent = true
+        w.isMovableByWindowBackground = true
         w.contentView = hosting
         w.isReleasedWhenClosed = false
         w.center()
